@@ -1,6 +1,6 @@
 <?php
 /*
-Split and stitch video
+web interface for youtube-dl
 Author Korolev Igor
 https://github.com/ikorolev72
 2018.08.02
