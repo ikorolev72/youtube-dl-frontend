@@ -9,12 +9,17 @@ version 1.0
 
 class common
 {
-    public static $youtube_dl = "youtube-dl";
+    public static $youtube_dl = "youtube-dl --no-color  ";
     public static $ffmpeg = "ffmpeg";
     public static $ffprobe = "ffprobe";
     public static $ffmpegLogLevel = 'info';
     public static $errors = array();
     public static $messages = array();
+
+    public static $utilDir = "/home/osboxes/php/";
+    public static $listS3 = "list_s3.php";
+    public static $awsYoutubeSubtitles = "youtube_subtitles.php";
+    public static $youtubeToS3 = "youtube_s3.php";
 
     public static function showErrors()
     {
@@ -301,10 +306,10 @@ class common
         return sprintf("%02d:%02d:%05.2f", $h, $m, $s);
     }
 
-    public static function getAvailableFormats($youtube_id)
+    public static function getAvailableFormats($youtubeUrl)
     {
 
-        $cmd = self::$youtube_dl . " -F $youtube_id 2>&1";
+        $cmd = self::$youtube_dl . " -F $youtubeUrl 2>&1";
         $out = array();
         exec($cmd, $output, $return);
         // Something wrong
@@ -321,10 +326,10 @@ class common
         return ($out);
     }
 
-    public static function getAvailableSubtitles($youtube_id)
+    public static function getAvailableSubtitles($youtubeUrl)
     {
 
-        $cmd = self::$youtube_dl . " --list-subs  $youtube_id 2>&1";
+        $cmd = self::$youtube_dl . " --list-subs  $youtubeUrl 2>&1";
         $out = array();
         exec($cmd, $output, $return);
         // Something wrong
@@ -334,51 +339,110 @@ class common
             return (false);
         }
         // check subtitles
-        $foundSubtitles=false;
+        $foundSubtitles = false;
         foreach ($output as $line) {
             if (preg_match("/^Available subtitles for /", $line, $matches)) {
-                $foundSubtitles=true;
+                $foundSubtitles = true;
                 continue;
             }
-            if( $foundSubtitles ) {
-                if(preg_match("/^Language\s+formats/i", $line, $matches)) {
+            if ($foundSubtitles) {
+                if (preg_match("/^Language\s+formats/i", $line, $matches)) {
                     continue;
                 }
                 if (preg_match("/^(\S+)\s+(.+)\s*$/", $line, $matches)) {
-                    $lang=$matches[1];
-                    $formats=preg_split("/,\s+/", $matches[2]) ;
-                    $out[] = array( "type"=>"subtitles", "language" => $lang, "formats"=> $formats) ;
+                    $lang = $matches[1];
+                    $formats = preg_split("/,\s+/", $matches[2]);
+                    $out[] = array("type" => "subtitles", "language" => $lang, "formats" => $formats);
                 } else {
-                    $foundSubtitles=false;
+                    $foundSubtitles = false;
                     continue;
-                }                   
+                }
             }
         }
-        
+
         // check auto captions subtitles
-        $foundSubtitles=false;
+        $foundSubtitles = false;
         foreach ($output as $line) {
             if (preg_match("/^Available automatic captions for /", $line, $matches)) {
-                $foundSubtitles=true;
+                $foundSubtitles = true;
                 continue;
             }
-            if( $foundSubtitles ) {
-                if(preg_match("/^Language\s+formats/i", $line, $matches)) {
+            if ($foundSubtitles) {
+                if (preg_match("/^Language\s+formats/i", $line, $matches)) {
                     continue;
                 }
                 if (preg_match("/^(\S+)\s+(.+)\s*$/", $line, $matches)) {
-                    $lang=$matches[1];
-                    $formats=preg_split("/,\s+/", $matches[2]) ;
-                    $out[] = array( "type"=>"automatic_captions", "language" => $lang, "formats"=> $formats) ;
+                    $lang = $matches[1];
+                    $formats = preg_split("/,\s+/", $matches[2]);
+                    $out[] = array("type" => "automatic_captions", "language" => $lang, "formats" => $formats);
                 } else {
-                    $foundSubtitles=false;
+                    $foundSubtitles = false;
                     continue;
-                }                   
+                }
             }
-        }        
+        }
         return ($out);
     }
 
+    public static function downloadVideo($youtubeUrl, $options, $logFile)
+    {
 
+        $cmd = self::$youtube_dl . " $options $youtubeUrl >> $logFile 2>&1";
+        $out = array();
+        exec($cmd, $output, $return);
+        // Something wrong
+        if ($return != 0) {
+            self::$errors = array_merge(self::$errors, $output);
+            self::writeToLog("Something wrong: " . join(PHP_EOL, $output));
+            return (false);
+        }
+
+        return ($out);
+    }
+
+    public static function getOutputFileMask($youtubeUrl)
+    {
+
+        $cmd = self::$youtube_dl . " --restrict-filenames --get-filename -o '%(title)s-%(id)s'  $youtubeUrl 2>&1";
+        //$out = array();
+        exec($cmd, $output, $return);
+        // Something wrong
+        if ($return != 0) {
+            self::$errors = array_merge(self::$errors, $output);
+            self::writeToLog("Something wrong: " . join(PHP_EOL, $output));
+            return (false);
+        }
+        $out = join("", $output);
+        return ($out);
+    }
+
+    public static function getYoutubeIdFromUrl($url)
+    {
+        // https://www.youtube.com/watch?v=nfGQyKrRpyM
+        if (preg_match("/v=([-\w]+)/", $url, $matches)) {
+            return ($matches[1]);
+        }
+        if (preg_match("/^([-\w]+)$/", $url, $matches)) {
+            return ($matches[1]);
+        }
+        return (false);
+    }
+
+    public static function getListS3()
+    {
+
+        $cmd = "php " . self::$utilDir . self::$listS3 . " 2>&1";
+        //$cmd = "php " . self::$listS3 . " 2>/dev/null";
+        //$out = array();
+        exec($cmd, $output, $return);
+        // Something wrong
+        if ($return != 0) {
+            self::$errors = array_merge(self::$errors, $output);
+            self::writeToLog("Something wrong: " . join(PHP_EOL, $output));
+            return (false);
+        }
+        $out = join("", $output);
+        return ($out);
+    }
 
 }

@@ -12,7 +12,7 @@ version 1.0
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Split and stitch video</title>
+    <title>youtube-dl frontend</title>
 	<LINK href='main.css' type=text/css rel=stylesheet>
 <script>
   function confirm_prompt( text,url ) {
@@ -34,7 +34,6 @@ function checkTime(t) {
   return (false);
 }
 
-
 </script>
 </head>
 <body>
@@ -43,7 +42,8 @@ function checkTime(t) {
 
 <?php
 echo "
-<a href=" . $_SERVER['PHP_SELF'] . "> Home </a>
+[<a href=" . $_SERVER['PHP_SELF'] . "> Home </a>]
+[<a href='list.php'> S3 file list </a>]
 <h2>youtube-dl web interface</h2>
 ";
 
@@ -52,16 +52,20 @@ include_once "common.php";
 //$debug = true;
 $debug = false;
 $basedir = dirname(__FILE__);
-$main_upload_dir = "$basedir/uploads/";
-$main_upload_url = "./uploads";
 $bin_dir = "$basedir/bin";
-$tmp_dir = "/tmp";
+$tmpDir = "/tmp/youtube-dl";
+$logDir = "$basedir/logs/";
+$logUrl = "./logs/";
+$dataDir = "$basedir/data/";
 
 $today = date("F j, Y, g:i a");
 $dt = date("U");
 
 $in = array();
 $data = null;
+if (!is_dir($tmpDir)) {
+    @mkdir($tmpDir);
+}
 
 $json_in = common::get_param('in');
 if ($json_in) {
@@ -92,6 +96,54 @@ if ($debug) {
 
 $string = json_encode($in, JSON_PRETTY_PRINT);
 
+// check if all data is right and download
+if (20 == $in['step']) {
+    $youtubeId = common::getYoutubeIdFromUrl($in['input']);
+    $fileName = "${youtubeId}_" . date("Y-m-d_H_i_s");
+    $logFile = "$logDir/$fileName.html";
+    $logUrl = "$logUrl/$fileName.html";
+    $execFile = "$dataDir/$fileName.php";
+    $input = $in["input"];
+    $outputFileMask = $in["outputFileMask"];
+    if (!isset($in["subtitles"])) {
+        $in["subtitles"] = '';
+    }
+
+    $formats = array();
+    foreach ($in["format"] as $format) {
+        if ($format) {
+            $formats[] = $format;
+        }
+    }
+
+    $options = " -f " . join(",", $formats);
+    $options .= "-m $outputFileMask ";
+    if ($in["subtitles"] !== "external") {
+        $options .= $in["subtitles"];
+    }
+
+    $html = getTemplateYoutubeDl($in['input']);
+    $cmd = '';
+    if ($in["subtitles"] === "external") {
+        $cmd .= "/usr/bin/php " . common::$utilDir . common::$awsYoutubeSubtitles . " -i $input -s $tmpDir/$outputFileMask >>$logFile 2>&1 && ";
+    }
+    $cmd .= "/usr/bin/php " . common::$utilDir . common::$youtubeToS3 . " -i $input $options >>$logFile 2>&1 &";
+
+    try {
+        file_put_contents($logFile, $html);
+    } catch (Exception $e) {
+        common::$errors[] = "Error: Cannot save file $logFile. " . $e->getMessage();
+        echo common::showErrors();
+        echo common::showMessages();
+        echo "</body></html>";
+        exit(1);
+    }
+    exec($cmd, $output, $return);
+    sleep(2);
+    header("Location: $logUrl");
+    exit(0);
+}
+
 // check if all data is right
 if (10 == $in['step']) {
     $countOfSelectedFormat = 0;
@@ -110,48 +162,58 @@ if (10 == $in['step']) {
     common::$messages[] = "Processing url '" . $in['input'] . "'";
     echo common::showErrors();
     echo common::showMessages();
-    $availableSubtitles=common::getAvailableSubtitles( $in['input'] );
+    $availableSubtitles = common::getAvailableSubtitles($in['input']);
     echo "<h3>Please, select subtitles you would like to download</h3>
       <form action='index.php' method='post' multipart='' enctype='multipart/form-data'>
       <table border=1>
       <tr>
-      <td></td>
-      <td>Type</td>
-      <td>Language</td>
-      <td>Formats</td>
+        <td></td>
+        <td>Type</td>
+        <td>Language</td>
+        <td>Formats</td>
       </tr>
       <tr>
-      <td>  <input type='radio' value='' name='subtitles' id='subtitles' selected> </td>
-      <td colspan=3>  Do not download subtitles </td>
-    </tr>";      
+        <td>  <input type='radio' value='' name='subtitles' id='subtitles' checked> </td>
+        <td colspan=3>  Do not download subtitles </td>
+      </tr>
+      <tr>
+        <td>  <input type='radio' value='external' name='subtitles' id='subtitles'> </td>
+        <td colspan=3>  Use AWS Amazon Transcribe for subtitles ( may take a long time ) </td>
+      </tr>";
     $i = 0;
-    foreach ( $availableSubtitles as $line) {
-        $subType = ( $line["type"]==="subtitles")? " --write-sub " : " --write-auto-sub "  ;
+    foreach ($availableSubtitles as $line) {
+        $subType = ($line["type"] === "subtitles") ? " -s " : " -a ";
+        $type = $line["type"];
         $lang = $line["language"];
-        $formats = $line["formats"];
+        // $formats = $line["formats"]; // Array !!! to do
+        $formats = $line["formats"][0];
         echo "<tr>
-        <td>  <input type='radio' value='$formatCode' name='subtitles'  id='subtitles'> </td>
-        <td>  $formatCode </td>
-        <td>  $extension </td>
-        <td>  $resolution </td>
-        <td>  $note </td>
+        <td>  <input type='radio' value=' $subType -l $lang ' name='subtitles'  id='subtitles'> </td>
+        <td>  $lang </td>
+        <td>  $formats </td>
+        <td>  $type </td>
       </tr>";
         $i++;
     }
     echo "</table>
     <br>
     <input type='submit'  name='save' id='save' value='Go'> </td>
-      <input type='hidden'  name='step' id='step' value='10'>
+      <input type='hidden'  name='step' id='step' value='20'>
       <input type='hidden'  name='in' id='in' value='$string'>
       </form>
       </body>
       </html>
       ";
-    exit(0);    
+    exit(0);
 }
 
-
-
+// check that
+if (5 == $in['step']) {
+    if (preg_match("/[^-\w]/", $in['outputFileMask'], $matches)) {
+        common::$errors[] = "Please, do not use spaces, special or national chars";
+        $in['step'] = 3;
+    }
+}
 
 if (5 == $in['step']) {
     $formats = common::getAvailableFormats($in['input']);
@@ -201,6 +263,34 @@ if (5 == $in['step']) {
     exit(0);
 }
 
+if (3 == $in['step']) {
+    if (!isset($in["outputFileMask"])) {
+        $in["outputFileMask"] = common::getOutputFileMask($in['input']);
+    }
+    common::$messages[] = "Processing url '" . $in['input'] . "'";
+    echo common::showErrors();
+    echo common::showMessages();
+
+    echo "<h3>What file name will be used for downloaded files ( videos/audio/subtitles) </h3>
+  Please, do not use spaces, special or national chars
+    <form action='index.php' method='post' multipart='' enctype='multipart/form-data'>
+    <table>
+    <tr>
+    <td><input type='text' name='outputFileMask' id='outputFileMask' value='" . $in["outputFileMask"] . "' size=50></td>
+    </tr>
+    ";
+    echo "</table>
+    <br>
+    <input type='submit'  name='save' id='save' value='Go'> </td>
+      <input type='hidden'  name='step' id='step' value='5'>
+      <input type='hidden'  name='in' id='in' value='$string'>
+      </form>
+      </body>
+      </html>
+      ";
+    exit(0);
+}
+
 // if step 0
 if (!$in['step']) {
     echo common::showErrors();
@@ -212,16 +302,39 @@ if (!$in['step']) {
     <form action='index.php' method='post' multipart='' enctype='multipart/form-data'>
     <table>
     <tr>
-      <td><input type='text' name='input' value='" . $in['input'] . "' size=50></td>
+      <td><input type='text' name='input' id='input' value='" . $in['input'] . "' size=50></td>
     </tr>
     <tr>
       <td><input type='submit'  name='save' id='save' value='Go'> </td>
     </tr>
     </table>
-    <input type='hidden'  name='step' id='step' value='5'>
+    <input type='hidden'  name='step' id='step' value='3'>
     </form>
   </body>
 </html>
 ";
     exit(0);
+}
+
+function getTemplateYoutubeDl($youtubeUrl)
+{
+    $code = "<!doctype html>
+    <html lang='en'>
+    <head>
+        <meta charset='UTF-8'>
+        <title>Video and subtitles download</title>
+        <style>
+        body {
+          font-family: verdana, arial, sans-serif;
+        }
+        </style>
+      <meta http-equiv='refresh' content='20'>
+
+    </head>
+    <body>
+    <a href='./../'> Home </a>
+    <h2>youtube-dl web interface</h2>
+    <h3> Video and subtitles download for <a href='$youtubeUrl'>$youtubeUrl</a>  </h3>
+    <pre>";
+    return ($code);
 }
