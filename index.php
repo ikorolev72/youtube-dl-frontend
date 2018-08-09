@@ -4,7 +4,7 @@ web interface for youtube-dl
 Author Korolev Igor
 https://github.com/ikorolev72
 2018.08.02
-version 1.0
+version 1.3
  */
 ?>
 
@@ -54,9 +54,9 @@ $debug = false;
 $basedir = dirname(__FILE__);
 $bin_dir = "$basedir/bin";
 $tmpDir = "/tmp/youtube-dl";
-$logDir = "$basedir/logs/";
-$logUrl = "./logs/";
-$dataDir = "$basedir/data/";
+$logDir = "$basedir/logs";
+$logUrl = "./logs";
+
 
 $today = date("F j, Y, g:i a");
 $dt = date("U");
@@ -102,7 +102,7 @@ if (20 == $in['step']) {
     $fileName = "${youtubeId}_" . date("Y-m-d_H_i_s");
     $logFile = "$logDir/$fileName.html";
     $logUrl = "$logUrl/$fileName.html";
-    $execFile = "$dataDir/$fileName.php";
+
     $input = $in["input"];
     $outputFileMask = $in["outputFileMask"];
     if (!isset($in["subtitles"])) {
@@ -117,17 +117,21 @@ if (20 == $in['step']) {
     }
 
     $options = " -f " . join(",", $formats);
-    $options .= "-m $outputFileMask ";
+    $options .= " -m $outputFileMask ";
     if ($in["subtitles"] !== "external") {
         $options .= $in["subtitles"];
     }
 
-    $html = getTemplateYoutubeDl($in['input']);
     $cmd = '';
     if ($in["subtitles"] === "external") {
-        $cmd .= "/usr/bin/php " . common::$utilDir . common::$awsYoutubeSubtitles . " -i $input -s $tmpDir/$outputFileMask >>$logFile 2>&1 && ";
+        $cmd .= "/usr/bin/php " . common::$utilDir . common::$awsYoutubeSubtitles . " -i $input -s $tmpDir/$outputFileMask.vtt && ";
     }
-    $cmd .= "/usr/bin/php " . common::$utilDir . common::$youtubeToS3 . " -i $input $options >>$logFile 2>&1 &";
+    $cmd .= "/usr/bin/php " . common::$utilDir . common::$youtubeToS3 . " -i $input $options  ";
+    $cmd = " ( $cmd ) >>$logFile 2>&1 & ";
+    $html = getTemplateYoutubeDl($in['input']);
+    if ($debug) {
+        $html .= "<br><pre>Execute command " . htmlentities($cmd) . "</pre>";
+    }
 
     try {
         file_put_contents($logFile, $html);
@@ -332,7 +336,8 @@ function getTemplateYoutubeDl($youtubeUrl)
 
     </head>
     <body>
-    <a href='./../'> Home </a>
+    [<a href='./../index.php'> Home </a>]
+    [<a href='./../list.php'> S3 file list </a>]
     <h2>youtube-dl web interface</h2>
     <h3> Video and subtitles download for <a href='$youtubeUrl'>$youtubeUrl</a>  </h3>
     <pre>";

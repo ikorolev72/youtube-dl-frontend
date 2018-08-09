@@ -42,7 +42,7 @@ function checkTime(t) {
 
 <?php
 echo "
-[<a href=" . $_SERVER['PHP_SELF'] . "> Home </a>]
+[<a href='index.php'> Home </a>]
 [<a href='list.php'> S3 file list </a>]
 <h2>youtube-dl web interface. List S3 uploaded files</h2>
 ";
@@ -57,9 +57,7 @@ $tmpDir = "/tmp/youtube-dl";
 $logDir = "$basedir/logs/";
 $logUrl = "./logs/";
 $dataDir = "$basedir/data/";
-$awsYoutubeSubtitles = "/home/ubuntu/php/youtube_subtitles.php";
-$youtubeToS3 = "/home/ubuntu/php/youtube_s3.php";
-$listS3 = "/home/ubuntu/php/list_s3.php";
+
 
 $today = date("F j, Y, g:i a");
 $dt = date("U");
